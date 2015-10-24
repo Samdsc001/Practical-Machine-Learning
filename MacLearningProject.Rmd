@@ -1,0 +1,120 @@
+---
+title: "Practical Machine Learning Prediction Project"
+author: "Sam"
+date: "Friday, October 23, 2015"
+output:
+  html_document:
+    keep_md: yes
+---
+
+##Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Data Processing
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r}
+setInternet2(TRUE)
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "pml-training.csv")
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "pml-testing.csv")
+training <- read.csv('pml-training.csv')
+testing <- read.csv('pml-testing.csv')
+
+dim(training)
+dim(testing)
+```
+
+##Prepare The Datasets
+
+
+
+```{r, echo=TRUE}
+library(survival)
+library(splines)
+library(plyr)
+library(doParallel)
+library(e1071)
+library(gbm)
+library(randomForest)
+library(ggplot2)
+library(caret)
+training <- training[, 6:dim(training)[2]]
+
+treshold <- dim(training)[1] * 0.95
+#Remove columns with more than 95% of NA or "" values
+goodColumns <- !apply(training, 2, function(x) sum(is.na(x)) > treshold  || sum(x=="") > treshold)
+
+training <- training[, goodColumns]
+
+badColumns <- nearZeroVar(training, saveMetrics = TRUE)
+
+training <- training[, badColumns$nzv==FALSE]
+
+training$classe = factor(training$classe)
+
+
+```
+
+##Splitting data
+We separate our training data into a training set and a validation set so that we can validate our model
+
+```{r, echo=TRUE}
+#Partition rows into training and validation
+inTrain <- createDataPartition(training$classe, p = 0.6)[[1]]
+crossv <- training[-inTrain,]
+training <- training[ inTrain,]
+inTrain <- createDataPartition(crossv$classe, p = 0.75)[[1]]
+crossv_test <- crossv[ -inTrain,]
+crossv <- crossv[inTrain,]
+
+testing <- testing[, 6:dim(testing)[2]]
+testing <- testing[, goodColumns]
+testing$classe <- NA
+testing <- testing[, badColumns$nzv==FALSE]
+```
+ 
+
+
+##Training Model
+Now, let's train the model, you can see some information of mod1 
+```{r, echo=TRUE}
+mod1<-randomForest(classe ~ ., data = training, importance = TRUE, ntrees = 10)
+
+mod1
+```
+
+##The Accuracy of my model
+```{r, echo=TRUE}
+pred1 <- predict(mod1, crossv) 
+
+#show confusion matrices
+confusionMatrix(pred1, crossv$classe)
+```
+Random Forest prediction was far better than other models.  The confusion matrix created gives an accuracy of 99.6%.
+
+Out of sample error was calculated has 99.7% accuracy on the validation set.
+
+
+##Conclusion
+The Random Forest (RF) method is the best prediction model for this dataset. The Confusion Matrix achieved 99.6% accuracy. The Out of Sample Error achieved 99.7%. Based on this conclusion RF will be used for the finall calculations.
+
+###Submission. (using COURSERA provided code) 
+```{r echo=TRUE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+
+
+predanswers <- predict(mod1, newdata=testing)
+predanswers
+pml_write_files(as.character(predanswers))
+
+```
